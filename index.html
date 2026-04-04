@@ -1147,9 +1147,15 @@ function handleChatKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();se
 
 function sendChatMessage(){var input=document.getElementById('ahme-chat-input');var text=input.value.trim();if(!text)return;input.value='';input.style.height='auto';addMsg('user',text);if(awaitingIntake&&!intakeCollected)parseIntake(text);chatHistory.push({role:'user',content:text});fetchReply();}
 
-function fetchReply(){showTyping();fetch(CHAT_PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:400,system:SYS,messages:chatHistory})}).then(function(r){return r.json();}).then(function(data){hideTyping();if(data.content&&data.content[0]){var reply=data.content[0].text;agentSay(reply);if(!intakeCollected&&(reply.indexOf('name and email')>-1||reply.indexOf('email address')>-1))awaitingIntake=true;if(!intakeCollected&&intakeName&&intakeEmail)submitIntake();}}).catch(function(){hideTyping();agentSay("I'm having a connection issue — please reach us at info@ahme.ai.");});}
+function fetchReply(){showTyping();fetch(CHAT_PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:400,system:SYS,messages:chatHistory})}).then(function(r){return r.json();}).then(function(data){hideTyping();if(data.content&&data.content[0]){var reply=data.content[0].text;agentSay(reply);if(!intakeCollected&&(reply.indexOf('name and email')>-1||reply.indexOf('email address')>-1))awaitingIntake=true;// intake handled in parseIntake}}).catch(function(){hideTyping();agentSay("I'm having a connection issue — please reach us at info@ahme.ai.");});}
 
-function parseIntake(text){var em=text.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);if(em)intakeEmail=em[0];var nm=text.replace(em?em[0]:'','').replace(/[,;]/g,'').trim();if(nm.length>1&&nm.length<60)intakeName=nm;if(intakeName&&intakeEmail){intakeCollected=true;awaitingIntake=false;}}
+function parseIntake(text){
+  var em=text.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
+  if(em)intakeEmail=em[0];
+  var nm=text.replace(em?em[0]:'','').replace(/[,;:.]/g,' ').replace(/\s+/g,' ').trim();
+  if(nm.length>1&&nm.length<60)intakeName=nm;
+  if(intakeName&&intakeEmail){intakeCollected=true;awaitingIntake=false;submitIntake();}
+}
 
 function submitIntake(){var t=chatHistory.map(function(m){return(m.role==='user'?'Visitor: ':'AHME: ')+m.content;}).join('\n\n');var fd=new FormData();fd.append('_subject','AHME Chat — '+intakeName);fd.append('Name',intakeName);fd.append('Email',intakeEmail);fd.append('Source','AI Chat — ahme.ai');fd.append('Conversation',t);fd.append('_replyto',intakeEmail);fetch('https://formspree.io/f/'+CHAT_FS,{method:'POST',body:fd,headers:{'Accept':'application/json'}}).then(function(r){if(r.ok)console.log('Chat intake sent');}).catch(function(){});}
 
