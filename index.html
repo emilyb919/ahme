@@ -1109,56 +1109,199 @@ function showResults() {
 #ahme-chat-send svg{width:16px;height:16px;fill:none;stroke:#fff;stroke-width:2;}
 </style>
 
-<button id="ahme-chat-bubble" onclick="toggleChat()" aria-label="Chat with AHME">
+<button id="ahme-chat-bubble" onclick="ahmeToggleChat()" aria-label="Chat with AHME">
   <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
 </button>
+
 <div id="ahme-chat-panel">
   <div id="ahme-chat-header">
     <div class="chat-header-left">
       <div class="chat-avatar"><svg viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg></div>
-      <div><div class="chat-header-name">AHME Assistant</div><div class="chat-header-status">&#9679; ONLINE &middot; AHME.AI</div></div>
+      <div>
+        <div class="chat-header-name">AHME Assistant</div>
+        <div class="chat-header-status">&#9679; ONLINE &middot; AHME.AI</div>
+      </div>
     </div>
-    <button id="ahme-chat-close" onclick="toggleChat()"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    <button id="ahme-chat-close" onclick="ahmeToggleChat()">
+      <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
   </div>
   <div id="ahme-chat-messages"></div>
   <div id="ahme-chat-input-area">
-    <textarea id="ahme-chat-input" rows="1" placeholder="Ask me anything about AHME..." onkeydown="handleChatKey(event)" oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"></textarea>
-    <button id="ahme-chat-send" onclick="sendChatMessage()"><svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+    <textarea id="ahme-chat-input" rows="1" placeholder="Ask me anything about AHME..."></textarea>
+    <button id="ahme-chat-send" onclick="ahmeHandleSend()">
+      <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+    </button>
   </div>
 </div>
 
 <script>
-var CHAT_PROXY='https://ahme.emily-diaz.workers.dev';
-var CHAT_FS='mbdpyope';
-var chatOpen=false,chatHistory=[],intakeCollected=false,intakeName='',intakeEmail='',awaitingIntake=false;
-var SYS="You are the AHME AI Assistant — warm, knowledgeable, concise. AHME is an AI solutions company in Clarksburg, Maryland that develops solutions connecting AI tools to current GMP practices in biotech, pharma, and regulated life sciences. Three delivery models: Purpose-Built Platforms, Custom AI Workflows, Strategic Implementation. Areas served: QA (deviations, CAPA, audits, supplier qualification), QC/Lab (LIMS, OOS/OOT, instruments), Manufacturing (batch records, MES, CPV), Facilities and Engineering (validation, calibration, CMMS), Supply Chain (traceability, cold chain, supplier risk). Core principle: AI reads from validated systems, never writes without human approval. Contact: info@ahme.ai. After 3-4 exchanges ask for name and email so Emily can follow up. Keep replies to 2-4 sentences.";
+(function() {
+  var PROXY = 'https://ahme.emily-diaz.workers.dev';
+  var FS = 'mbdpyope';
+  var SYS = "You are the AHME AI Assistant. AHME develops solutions connecting AI tools to current GMP practices for biotech, pharma, and regulated life sciences in Clarksburg, Maryland. Three delivery models: 01 Purpose-Built Platforms, 02 Custom AI Workflows, 03 Strategic Implementation. Areas: QA, QC/Lab, Manufacturing, Facilities and Engineering, Supply Chain. Core principle: AI reads from validated systems, never writes without human approval. Contact: info@ahme.ai. After 3-4 exchanges ask for name and email so a member of the AHME team can follow up within 1-2 business days. Keep replies to 2-4 sentences.";
 
-function toggleChat(){chatOpen=!chatOpen;var p=document.getElementById('ahme-chat-panel');p.style.display=chatOpen?'flex':'none';if(chatOpen&&chatHistory.length===0){setTimeout(function(){agentSay("Hi! I'm AHME's AI assistant. Whether you're curious about what we do or exploring a challenge — I'm here to help. What brings you to our site today?");},400);}if(chatOpen)setTimeout(function(){document.getElementById('ahme-chat-input').focus();},300);}
+  var isOpen = false;
+  var history = [];
+  var intakeDone = false;
+  var iName = '';
+  var iEmail = '';
+  var waitingIntake = false;
 
-function addMsg(role,text){var c=document.getElementById('ahme-chat-messages');var d=document.createElement('div');d.className='chat-msg '+(role==='user'?'user':'agent');var b=document.createElement('div');b.className='chat-msg-bubble';b.textContent=text;d.appendChild(b);c.appendChild(d);c.scrollTop=c.scrollHeight;}
+  function addMsg(role, text) {
+    var c = document.getElementById('ahme-chat-messages');
+    var d = document.createElement('div');
+    d.className = 'chat-msg ' + (role === 'user' ? 'user' : 'agent');
+    var b = document.createElement('div');
+    b.className = 'chat-msg-bubble';
+    b.textContent = text;
+    d.appendChild(b);
+    c.appendChild(d);
+    c.scrollTop = c.scrollHeight;
+  }
 
-function agentSay(text){addMsg('agent',text);chatHistory.push({role:'assistant',content:text});}
+  function showTyping() {
+    var c = document.getElementById('ahme-chat-messages');
+    var d = document.createElement('div');
+    d.className = 'chat-msg agent';
+    d.id = 'ahme-typing';
+    d.innerHTML = '<div class="chat-typing"><span></span><span></span><span></span></div>';
+    c.appendChild(d);
+    c.scrollTop = c.scrollHeight;
+  }
 
-function showTyping(){var c=document.getElementById('ahme-chat-messages');var d=document.createElement('div');d.className='chat-msg agent';d.id='chat-typing';d.innerHTML='<div class="chat-typing"><span></span><span></span><span></span></div>';c.appendChild(d);c.scrollTop=c.scrollHeight;}
+  function hideTyping() {
+    var e = document.getElementById('ahme-typing');
+    if (e) e.remove();
+  }
 
-function hideTyping(){var e=document.getElementById('chat-typing');if(e)e.remove();}
+  function sendToProxy(messages, callback) {
+    fetch(PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 400,
+        system: SYS,
+        messages: messages
+      })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.content && d.content[0]) {
+        callback(null, d.content[0].text);
+      } else {
+        callback('No response');
+      }
+    })
+    .catch(function(e) { callback(e.message); });
+  }
 
-function handleChatKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChatMessage();}}
+  function parseIntake(text) {
+    var emailRe = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/;
+    var em = text.match(emailRe);
+    if (em) iEmail = em[0];
+    var nm = text.replace(em ? em[0] : '', '').replace(/[,;:.]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (nm.length > 1 && nm.length < 60) iName = nm;
+    if (iName && iEmail) {
+      intakeDone = true;
+      waitingIntake = false;
+      submitIntake();
+    }
+  }
 
-function sendChatMessage(){var input=document.getElementById('ahme-chat-input');var text=input.value.trim();if(!text)return;input.value='';input.style.height='auto';addMsg('user',text);if(awaitingIntake&&!intakeCollected)parseIntake(text);chatHistory.push({role:'user',content:text});fetchReply();}
+  function submitIntake() {
+    var transcript = history.map(function(m) {
+      return (m.role === 'user' ? 'Visitor: ' : 'AHME: ') + m.content;
+    }).join('\n\n');
+    var fd = new FormData();
+    fd.append('_subject', 'AHME Chat — ' + iName);
+    fd.append('Name', iName);
+    fd.append('Email', iEmail);
+    fd.append('Source', 'AI Chat — ahme.ai');
+    fd.append('Conversation', transcript);
+    fd.append('_replyto', iEmail);
+    fetch('https://formspree.io/f/' + FS, {
+      method: 'POST',
+      body: fd,
+      headers: { 'Accept': 'application/json' }
+    }).then(function(r) {
+      if (r.ok) console.log('Intake sent');
+      else console.warn('Formspree error', r.status);
+    }).catch(function(e) { console.warn('Intake failed', e); });
+  }
 
-function fetchReply(){showTyping();fetch(CHAT_PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:400,system:SYS,messages:chatHistory})}).then(function(r){return r.json();}).then(function(data){hideTyping();if(data.content&&data.content[0]){var reply=data.content[0].text;agentSay(reply);if(!intakeCollected&&(reply.indexOf('name and email')>-1||reply.indexOf('email address')>-1))awaitingIntake=true;// intake handled in parseIntake}}).catch(function(){hideTyping();agentSay("I'm having a connection issue — please reach us at info@ahme.ai.");});}
+  function processReply(reply) {
+    hideTyping();
+    addMsg('agent', reply);
+    history.push({ role: 'assistant', content: reply });
+    if (!intakeDone && (reply.indexOf('name and email') > -1 || reply.indexOf('email address') > -1)) {
+      waitingIntake = true;
+    }
+  }
 
-function parseIntake(text){
-  var em=text.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
-  if(em)intakeEmail=em[0];
-  var nm=text.replace(em?em[0]:'','').replace(/[,;:.]/g,' ').replace(/\s+/g,' ').trim();
-  if(nm.length>1&&nm.length<60)intakeName=nm;
-  if(intakeName&&intakeEmail){intakeCollected=true;awaitingIntake=false;submitIntake();}
-}
+  function sendMessage(text) {
+    addMsg('user', text);
+    if (waitingIntake && !intakeDone) parseIntake(text);
+    history.push({ role: 'user', content: text });
+    showTyping();
+    sendToProxy(history, function(err, reply) {
+      if (err) {
+        hideTyping();
+        addMsg('agent', "I'm having a connection issue — please reach us at info@ahme.ai.");
+      } else {
+        processReply(reply);
+      }
+    });
+  }
 
-function submitIntake(){var t=chatHistory.map(function(m){return(m.role==='user'?'Visitor: ':'AHME: ')+m.content;}).join('\n\n');var fd=new FormData();fd.append('_subject','AHME Chat — '+intakeName);fd.append('Name',intakeName);fd.append('Email',intakeEmail);fd.append('Source','AI Chat — ahme.ai');fd.append('Conversation',t);fd.append('_replyto',intakeEmail);fetch('https://formspree.io/f/'+CHAT_FS,{method:'POST',body:fd,headers:{'Accept':'application/json'}}).then(function(r){if(r.ok)console.log('Chat intake sent');}).catch(function(){});}
+  window.ahmeToggleChat = function() {
+    isOpen = !isOpen;
+    var panel = document.getElementById('ahme-chat-panel');
+    panel.style.display = isOpen ? 'flex' : 'none';
+    if (isOpen && history.length === 0) {
+      setTimeout(function() {
+        var greeting = "Hi! I'm AHME's AI assistant. Whether you're curious about what we do or exploring a challenge — I'm here to help. What brings you to our site today?";
+        addMsg('agent', greeting);
+        history.push({ role: 'assistant', content: greeting });
+      }, 400);
+    }
+    if (isOpen) {
+      setTimeout(function() {
+        document.getElementById('ahme-chat-input').focus();
+      }, 300);
+    }
+  };
 
+  window.ahmeHandleSend = function() {
+    var input = document.getElementById('ahme-chat-input');
+    var text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    input.style.height = 'auto';
+    sendMessage(text);
+  };
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var input = document.getElementById('ahme-chat-input');
+    if (input) {
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          window.ahmeHandleSend();
+        }
+      });
+      input.addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+      });
+    }
+  });
+
+})();
+</script>
+
+<script>
 function toggleCap(el){var o=el.classList.contains('open');document.querySelectorAll('.ca-item.open').forEach(function(i){i.classList.remove('open');});if(!o)el.classList.add('open');}
 function toggleArea(el){var o=el.classList.contains('open');document.querySelectorAll('.area-item.open').forEach(function(i){i.classList.remove('open');});if(!o)el.classList.add('open');}
 </script>
